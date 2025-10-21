@@ -1,50 +1,64 @@
-import React from 'react';
-import { useIntl } from '@edx/frontend-platform/i18n';
-import { Form } from '@openedx/paragon';
+import React, {
+  Component,
+} from 'react';
+import PropTypes from 'prop-types';
+import { injectIntl, intlShape } from '@edx/frontend-platform/i18n';
+import { Input } from '@openedx/paragon';
 
-import { MasqueradeStatus, Payload } from './data/api';
 import messages from './messages';
 
-interface Props extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onSubmit' | 'onError'> {
-  onError: (error: string) => void;
-  onSubmit: (payload: Payload) => Promise<MasqueradeStatus>;
-}
+class MasqueradeUserNameInput extends Component {
+  onError(...args) {
+    return this.props.onError(...args);
+  }
 
-export const MasqueradeUserNameInput: React.FC<Props> = ({ onSubmit, onError, ...otherProps }) => {
-  const intl = useIntl();
+  onKeyPress(event) {
+    if (event.key === 'Enter') {
+      return this.onSubmit(event);
+    }
+    return true;
+  }
 
-  const handleSubmit = React.useCallback((userIdentifier: string) => {
-    const payload: Payload = {
+  onSubmit(event) {
+    const payload = {
       role: 'student',
-      user_name: userIdentifier, // user name or email
+      user_name: event.target.value,
     };
-    onSubmit(payload).then((data) => {
+    this.props.onSubmit(payload).then((data) => {
       if (data && data.success) {
         global.location.reload();
       } else {
         const error = (data && data.error) || '';
-        onError(error);
+        this.onError(error);
       }
     }).catch(() => {
-      const message = intl.formatMessage(messages.genericError);
-      onError(message);
+      const message = this.props.intl.formatMessage(messages.genericError);
+      this.onError(message);
     });
     return true;
-  }, [onError]);
+  }
 
-  const handleKeyPress = React.useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      return handleSubmit(event.currentTarget.value);
-    }
-    return true;
-  }, [handleSubmit]);
-
-  return (
-    <Form.Control
-      aria-labelledby="masquerade-search-label"
-      label={intl.formatMessage(messages.userNameLabel)}
-      onKeyPress={handleKeyPress}
-      {...otherProps}
-    />
-  );
+  render() {
+    const {
+      intl,
+      onError,
+      onSubmit,
+      ...rest
+    } = this.props;
+    return (
+      <Input
+        aria-labelledby="masquerade-search-label"
+        label={intl.formatMessage(messages.userNameLabel)}
+        onKeyPress={(event) => this.onKeyPress(event)}
+        type="text"
+        {...rest}
+      />
+    );
+  }
+}
+MasqueradeUserNameInput.propTypes = {
+  intl: intlShape.isRequired,
+  onError: PropTypes.func.isRequired,
+  onSubmit: PropTypes.func.isRequired,
 };
+export default injectIntl(MasqueradeUserNameInput);
