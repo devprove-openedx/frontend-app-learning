@@ -26,6 +26,16 @@ const messages = defineMessages({
     defaultMessage: 'Staff',
     description: 'Button Staff',
   },
+  titleStudent: {
+    id: 'instructor.toolbar.student',
+    defaultMessage: 'Specific Student...',
+    description: 'Button Specific Student',
+  },
+  titleLearner: {
+    id: 'instructor.toolbar.learner',
+    defaultMessage: 'Learner',
+    description: 'Button Learner',
+  },
 });
 
 export default messages;
