@@ -1,55 +1,43 @@
-import React from 'react';
-import { FormattedMessage, useIntl } from '@edx/frontend-platform/i18n';
+import React, {
+  Component,
+} from 'react';
+import PropTypes from 'prop-types';
+import { FormattedMessage, injectIntl, intlShape } from '@edx/frontend-platform/i18n';
 import { Dropdown } from '@openedx/paragon';
 
-import { MasqueradeUserNameInput } from './MasqueradeUserNameInput';
-import { MasqueradeWidgetOption } from './MasqueradeWidgetOption';
+import { UserMessagesContext } from '../../generic/user-messages';
+
+import MasqueradeUserNameInput from './MasqueradeUserNameInput';
+import MasqueradeWidgetOption from './MasqueradeWidgetOption';
 import {
-  ActiveMasqueradeData,
   getMasqueradeOptions,
-  MasqueradeOption,
-  Payload,
   postMasqueradeOptions,
 } from './data/api';
 import messages from './messages';
 
-interface Props {
-  courseId: string;
-  onError: (error: string) => void;
-}
+class MasqueradeWidget extends Component {
+  constructor(props) {
+    super(props);
+    this.courseId = props.courseId;
+    this.state = {
+      autoFocus: false,
+      masquerade: this.props.intl.formatMessage(messages['instructor.toolbar.staff']),
+      active: {},
+      available: [],
+      shouldShowUserNameInput: false,
+      masqueradeUsername: null,
+    };
+  }
 
-export const MasqueradeWidget: React.FC<Props> = ({ courseId, onError }) => {
-  const intl = useIntl();
-  const [autoFocus, setAutoFocus] = React.useState(false);
-  const [active, setActive] = React.useState<ActiveMasqueradeData>({
-    courseKey: '',
-    role: 'staff',
-    groupId: null,
-    groupName: null,
-    userName: null,
-    userPartitionId: null,
-  });
-  const [available, setAvailable] = React.useState<MasqueradeOption[]>([]);
-  const [shouldShowUserNameInput, setShouldShowUserNameInput] = React.useState(false);
-
-  React.useEffect(() => {
-    if (active.courseKey === courseId) {
-      return; // Already fetched.
-    }
-    getMasqueradeOptions(courseId).then((data) => {
+  componentDidMount() {
+    getMasqueradeOptions(this.courseId).then((data) => {
       if (data.success) {
-        const newActive = data.active || {};
-        const newAvailable = data.available || [];
-        if (newActive.userName) {
-          setAutoFocus(false);
-          setShouldShowUserNameInput(true);
-        }
-        setActive(newActive);
-        setAvailable(newAvailable);
+        this.onSuccess(data);
       } else {
         // This was explicitly denied by the backend;
         // assume it's disabled/unavailable.
-        onError('Unable to get masquerade options');
+        // eslint-disable-next-line no-console
+        this.onError('Unable to get masquerade options');
       }
     }).catch((response) => {
       // There's not much we can do to recover;
@@ -58,73 +46,119 @@ export const MasqueradeWidget: React.FC<Props> = ({ courseId, onError }) => {
       // eslint-disable-next-line no-console
       console.error('Unable to get masquerade options', response);
     });
-  }, [courseId, onError]);
+  }
 
-  const handleSubmit = React.useCallback(async (payload: Payload) => {
-    onError(''); // Clear any error
-    return postMasqueradeOptions(courseId, payload);
-  }, [courseId]);
+  onError(message) {
+    this.props.onError(message);
+  }
 
-  const toggle = React.useCallback((
-    show: boolean | undefined,
-    groupId: number | null,
-    groupName: string,
-    role: 'staff' | 'student',
-    userName: string,
-    userPartitionId: number | null,
-  ) => {
-    setAutoFocus(true);
-    // set masquerade: groupName
-    setShouldShowUserNameInput((prev) => (show === undefined ? !prev : show));
-    setActive(prev => ({
-      ...prev,
-      groupId,
-      groupName,
-      role,
-      userName,
-      userPartitionId,
+  async onSubmit(payload) {
+    this.clearError();
+    const options = await postMasqueradeOptions(this.courseId, payload);
+    return options;
+  }
+
+  onSuccess(data) {
+    const { active, available } = this.parseAvailableOptions(data);
+    this.setState({
+      active,
+      available,
+    });
+  }
+
+  getOptions() {
+    const options = this.state.available.map((group) => (
+      <MasqueradeWidgetOption
+        groupId={group.groupId}
+        groupName={group.name}
+        key={group.name}
+        role={group.role}
+        selected={this.state.active}
+        userName={group.userName}
+        userPartitionId={group.userPartitionId}
+        userNameInputToggle={(...args) => this.toggle(...args)}
+        onSubmit={(payload) => this.onSubmit(payload)}
+      />
+    ));
+    return options;
+  }
+
+  clearError() {
+    this.props.onError('');
+  }
+
+  toggle(show, groupId, groupName, role, userName, userPartitionId) {
+    this.setState(prevState => ({
+      autoFocus: true,
+      masquerade: groupName,
+      shouldShowUserNameInput: show === undefined ? !prevState.shouldShowUserNameInput : show,
+      active: {
+        ...prevState.active, groupId, role, userName, userPartitionId,
+      },
     }));
-  }, []);
+  }
 
-  const specificLearnerInputText = intl.formatMessage(messages.placeholder);
-  return (
-    <div className="flex-grow-1">
-      <div className="row">
-        <span className="col-auto col-form-label pl-3"><FormattedMessage {...messages.titleViewAs} /></span>
-        <Dropdown className="flex-shrink-1 mx-1">
-          <Dropdown.Toggle id="masquerade-widget-toggle" variant="inverse-outline-primary">
-            {active.groupName ?? active.userName ?? intl.formatMessage(messages.titleStaff)}
-          </Dropdown.Toggle>
-          <Dropdown.Menu>
-            {available.map(group => (
-              <MasqueradeWidgetOption
-                groupId={group.groupId}
-                groupName={group.name}
-                key={group.name}
-                role={group.role}
-                selected={active}
-                userName={group.userName}
-                userPartitionId={group.userPartitionId}
-                userNameInputToggle={toggle}
-                onSubmit={handleSubmit}
-              />
-            ))}
-          </Dropdown.Menu>
-        </Dropdown>
-      </div>
-      {shouldShowUserNameInput && (
-        <div className="row mt-2">
-          <span className="col-auto col-form-label pl-3" id="masquerade-search-label">{`${specificLearnerInputText}:`}</span>
-          <MasqueradeUserNameInput
-            id="masquerade-search"
-            className="col-4"
-            autoFocus={autoFocus}
-            defaultValue={active.userName ?? ''}
-            onError={onError}
-            onSubmit={handleSubmit}
-          />
+  parseAvailableOptions(postData) {
+    const data = postData || {};
+    const active = data.active || {};
+    const available = data.available || [];
+    if (active.userName) {
+      this.setState({
+        autoFocus: false,
+        masquerade: this.props.intl.formatMessage(messages['instructor.toolbar.student']),
+        masqueradeUsername: active.userName,
+        shouldShowUserNameInput: true,
+      });
+    } else if (active.groupName) {
+      this.setState({ masquerade: active.groupName });
+    } else if (active.role === 'student') {
+      this.setState({ masquerade: this.props.intl.formatMessage(messages['instructor.toolbar.student']) });
+    }
+    return { active, available };
+  }
+
+  render() {
+    const {
+      autoFocus,
+      masquerade,
+      shouldShowUserNameInput,
+      masqueradeUsername,
+    } = this.state;
+    const specificLearnerInputText = this.props.intl.formatMessage(messages.placeholder);
+    return (
+      <div className="flex-grow-1">
+        <div className="row">
+          <span className="col-auto col-form-label pl-3"><FormattedMessage {...messages.titleViewAs} /></span>
+          <Dropdown className="flex-shrink-1 mx-1">
+            <Dropdown.Toggle id="masquerade-widget-toggle" variant="inverse-outline-primary">
+              {masquerade}
+            </Dropdown.Toggle>
+            <Dropdown.Menu>
+              {this.getOptions()}
+            </Dropdown.Menu>
+          </Dropdown>
         </div>
-      )}
-    </div>
-  );
+        {shouldShowUserNameInput && (
+          <div className="row mt-2">
+            <span className="col-auto col-form-label pl-3" id="masquerade-search-label">{`${specificLearnerInputText}:`}</span>
+            <MasqueradeUserNameInput
+              id="masquerade-search"
+              className="col-4"
+              autoFocus={autoFocus}
+              defaultValue={masqueradeUsername}
+              onError={(errorMessage) => this.onError(errorMessage)}
+              onSubmit={(payload) => this.onSubmit(payload)}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+}
+MasqueradeWidget.propTypes = {
+  courseId: PropTypes.string.isRequired,
+  intl: intlShape.isRequired,
+  onError: PropTypes.func.isRequired,
 };
+MasqueradeWidget.contextType = UserMessagesContext;
+export default injectIntl(MasqueradeWidget);
